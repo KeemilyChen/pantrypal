@@ -1,24 +1,27 @@
 "use client"
 
 import { Suspense, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FridgeView, InventoryGrid } from "@/components/inventory/fridge-view"
 import { InventoryDetailSheet } from "@/components/inventory/inventory-card"
 import { InventoryItemDialog } from "@/components/inventory/inventory-item-dialog"
+import { ReceiptScanDialog } from "@/components/receipts/receipt-scan-dialog"
 import { useKitchen } from "@/components/providers/kitchen-provider"
 import type { InventoryItem, StorageLocation } from "@/lib/types"
 import { toast } from "sonner"
 
 function FridgeBody() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const { inventory, addInventoryItem, updateInventoryItem, removeInventoryItem, ready } =
     useKitchen()
   const [selected, setSelected] = useState<InventoryItem | null>(null)
   const [editing, setEditing] = useState<InventoryItem | null>(null)
   const [creating, setCreating] = useState(searchParams.get("add") === "1")
+  const [scanning, setScanning] = useState(searchParams.get("scan") === "1")
 
   const available = inventory.filter((item) => item.status === "available")
 
@@ -98,6 +101,16 @@ function FridgeBody() {
             addInventoryItem(draft)
             toast.success("Added to your kitchen")
           }
+        }}
+      />
+      <ReceiptScanDialog
+        open={scanning}
+        onOpenChange={(open) => {
+          setScanning(open)
+          if (!open && searchParams.get("scan") === "1") router.replace("/fridge")
+        }}
+        onImport={(drafts) => {
+          drafts.forEach((draft) => addInventoryItem(draft))
         }}
       />
     </div>

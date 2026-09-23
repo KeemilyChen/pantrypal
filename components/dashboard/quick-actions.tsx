@@ -1,9 +1,14 @@
 import Link from "next/link"
 import { CalendarPlus, Camera, Plus, Sparkles, Utensils } from "lucide-react"
 
-const ACTIONS = [
+const ACTIONS: {
+  href: string
+  label: string
+  icon: typeof Plus
+  soon?: boolean
+}[] = [
   { href: "/fridge?add=1", label: "Add food", icon: Plus },
-  { href: "/fridge", label: "Scan receipt", icon: Camera, soon: true },
+  { href: "/fridge?scan=1", label: "Scan receipt", icon: Camera },
   { href: "/home#cook", label: "What can I cook?", icon: Sparkles },
   { href: "/recipes?new=1", label: "Add recipe", icon: Utensils },
   { href: "/plan", label: "Create meal plan", icon: CalendarPlus },

@@ -15,5 +15,23 @@ export const receiptParseSchema = z.object({
   ),
 })
 
-/** Phase 5: vision extraction only. Application code inserts after user review. */
+/** Vision extraction only. Application code inserts after user review. */
 export type ParsedReceipt = z.infer<typeof receiptParseSchema>
+
+export const receiptParseRequestSchema = z.object({
+  image: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value),
+      "Image must be a JPEG, PNG, or WebP data URL",
+    ),
+})
+
+const DATA_URL_LIMIT = 3_500_000
+
+export function assertReceiptImageSize(image: string) {
+  if (image.length > DATA_URL_LIMIT) {
+    throw new Error("Receipt photo is too large. Try a closer, smaller photo.")
+  }
+}
