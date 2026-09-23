@@ -34,6 +34,7 @@ type KitchenContextValue = KitchenState & {
   updateInventoryItem: (id: string, patch: Partial<InventoryItem>) => void
   removeInventoryItem: (id: string) => void
   addRecipe: (input: RecipeWrite) => Recipe
+  removeRecipe: (id: string) => boolean
   addMealPlan: (date: string, mealType: MealType, recipeId: string) => void
   removeMealPlan: (id: string) => void
   addShoppingItem: (input: {
@@ -142,6 +143,20 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       return recipe
     },
     [commit],
+  )
+
+  const removeRecipe = useCallback(
+    (id: string) => {
+      const recipe = state.recipes.find((item) => item.id === id)
+      if (!recipe || recipe.source !== "user") return false
+      commit((prev) => ({
+        ...prev,
+        recipes: prev.recipes.filter((item) => item.id !== id),
+        mealPlans: prev.mealPlans.filter((plan) => plan.recipeId !== id),
+      }))
+      return true
+    },
+    [commit, state.recipes],
   )
 
   const addMealPlan = useCallback(
@@ -285,6 +300,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       updateInventoryItem,
       removeInventoryItem,
       addRecipe,
+      removeRecipe,
       addMealPlan,
       removeMealPlan,
       addShoppingItem,
@@ -302,6 +318,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       updateInventoryItem,
       removeInventoryItem,
       addRecipe,
+      removeRecipe,
       addMealPlan,
       removeMealPlan,
       addShoppingItem,

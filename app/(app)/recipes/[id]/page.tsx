@@ -1,9 +1,17 @@
 "use client"
 
 import { use, useState } from "react"
-import { notFound } from "next/navigation"
+import { notFound, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { IngredientList } from "@/components/recipes/recipe-card"
 import { todayISO, useKitchen } from "@/components/providers/kitchen-provider"
 import { matchRecipeIngredients } from "@/lib/recipes/ingredient-matching"
@@ -15,15 +23,18 @@ export default function RecipeDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = use(params)
+  const router = useRouter()
   const {
     inventory,
     allRecipes,
     addMissingToShopping,
     addMealPlan,
     consumeRecipe,
+    removeRecipe,
     ready,
   } = useKitchen()
   const [step, setStep] = useState(0)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const recipe = allRecipes.find((item) => item.id === id)
 
   if (!ready) return <p className="text-sm text-muted-foreground">Loading recipe…</p>
@@ -100,6 +111,48 @@ export default function RecipeDetailPage({
           </Button>
         ) : null}
       </section>
+      {recipe.source === "user" ? (
+        <>
+          <Button
+            variant="destructive"
+            className="h-11 w-full rounded-full sm:w-auto"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete recipe
+          </Button>
+          <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete {recipe.name}?</DialogTitle>
+                <DialogDescription>
+                  This recipe will be permanently deleted. This can&apos;t be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setConfirmingDelete(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => {
+                    const removed = removeRecipe(recipe.id)
+                    if (!removed) {
+                      toast.error("This recipe can’t be deleted.")
+                      setConfirmingDelete(false)
+                      return
+                    }
+                    toast.success("Recipe deleted")
+                    router.push("/recipes")
+                  }}
+                >
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
     </div>
   )
 }
