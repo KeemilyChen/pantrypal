@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CalendarPlus, Camera, Plus, Sparkles, Utensils } from "lucide-react"
+import { CalendarPlus, Camera, Dices, Plus, Sparkles, Utensils } from "lucide-react"
 
 const ACTIONS: {
   href: string
@@ -10,13 +10,14 @@ const ACTIONS: {
   { href: "/fridge?add=1", label: "Add food", icon: Plus },
   { href: "/fridge?scan=1", label: "Scan receipt", icon: Camera },
   { href: "/home#cook", label: "What can I cook?", icon: Sparkles },
+  { href: "/home#pick", label: "Pick for Me", icon: Dices },
   { href: "/recipes?new=1", label: "Add recipe", icon: Utensils },
   { href: "/plan", label: "Create meal plan", icon: CalendarPlus },
 ]
 
 export function QuickActions() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {ACTIONS.map((action) => (
         <Link
           key={action.label}

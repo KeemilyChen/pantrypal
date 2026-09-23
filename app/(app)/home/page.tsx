@@ -4,6 +4,7 @@ import { Bell, Settings } from "lucide-react"
 import { AiCookingCard } from "@/components/dashboard/ai-cooking-card"
 import { ExpiringItems } from "@/components/dashboard/expiring-items"
 import { MealCard } from "@/components/dashboard/meal-card"
+import { PickForMeCard } from "@/components/dashboard/pick-for-me-card"
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { todayISO, useKitchen } from "@/components/providers/kitchen-provider"
 import { greetingForHour } from "@/lib/food"
@@ -45,6 +46,7 @@ export default function HomePage() {
       <div id="cook">
         <AiCookingCard />
       </div>
+      <PickForMeCard />
       <section>
         <h2 className="mb-3 text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase">
           Expiring soon
