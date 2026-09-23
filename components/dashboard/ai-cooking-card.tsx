@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,9 +10,11 @@ import type { RecommendationResponse } from "@/lib/ai/schemas"
 import { useKitchen } from "@/components/providers/kitchen-provider"
 import { toast } from "sonner"
 
+const PLACEHOLDER = "Something healthy under 20 minutes, no pasta…"
+
 export function AiCookingCard() {
   const { inventory, allRecipes } = useKitchen()
-  const [query, setQuery] = useState("I have chicken, broccoli and rice...")
+  const [query, setQuery] = useState("")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<RecommendationResponse | null>(null)
 
@@ -36,6 +39,7 @@ export function AiCookingCard() {
           recipeCatalog: allRecipes.map((recipe) => ({
             id: recipe.id,
             name: recipe.name,
+            description: recipe.description,
             cookTime: recipe.cookTime,
             prepTime: recipe.prepTime,
             ingredients: recipe.ingredients.map((ingredient) => ingredient.ingredientName),
@@ -46,6 +50,7 @@ export function AiCookingCard() {
       if (!response.ok) throw new Error(data.error ?? "Could not get recommendations")
       setResult(data)
     } catch (error) {
+      setResult(null)
       toast.error(error instanceof Error ? error.message : "Something went wrong")
     } finally {
       setLoading(false)
@@ -66,6 +71,7 @@ export function AiCookingCard() {
           id="cook-query"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          placeholder={PLACEHOLDER}
           className="min-h-20 border-white/30 bg-white/15 text-white placeholder:text-white/70"
         />
         <Button
@@ -80,13 +86,46 @@ export function AiCookingCard() {
       {result ? (
         <div className="mt-4 space-y-3">
           <p className="text-sm text-white/90">{result.summary}</p>
-          {result.recipes.map((recipe) => (
-            <div key={recipe.name} className="rounded-2xl bg-white/15 p-3">
-              <p className="font-medium">{recipe.name}</p>
-              <p className="text-sm text-white/85">{recipe.reason}</p>
-              <p className="mt-1 text-xs text-white/70">{recipe.estimatedMinutes} min</p>
-            </div>
-          ))}
+          {result.source === "catalog" ? (
+            <p className="text-xs text-white/70">
+              Live AI is off, so this is a catalog pick from your request — not a generated answer.
+            </p>
+          ) : null}
+          {result.recipes.map((recipe) => {
+            const body = (
+              <>
+                <p className="font-medium">{recipe.name}</p>
+                <p className="text-sm text-white/85">{recipe.reason}</p>
+                <p className="mt-1 text-xs text-white/70">{recipe.estimatedMinutes} min</p>
+                {recipe.why.length ? (
+                  <ul className="mt-2 space-y-1 text-xs text-white/80">
+                    {recipe.why.map((line) => (
+                      <li key={line}>• {line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {recipe.matchedRecipeId ? (
+                  <p className="mt-2 text-xs font-medium text-white">Open recipe →</p>
+                ) : null}
+              </>
+            )
+            if (!recipe.matchedRecipeId) {
+              return (
+                <div key={recipe.name} className="rounded-2xl bg-white/15 p-3">
+                  {body}
+                </div>
+              )
+            }
+            return (
+              <Link
+                key={recipe.matchedRecipeId}
+                href={`/recipes/${recipe.matchedRecipeId}`}
+                className="block rounded-2xl bg-white/15 p-3 transition hover:bg-white/25"
+              >
+                {body}
+              </Link>
+            )
+          })}
         </div>
       ) : null}
     </section>
@@ -103,7 +142,11 @@ export function QuickAskField(props: { onAsk: (query: string) => void }) {
         if (query.trim()) props.onAsk(query.trim())
       }}
     >
-      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="20 minutes, something cozy…" />
+      <Input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Something easy, no rice…"
+      />
       <Button type="submit">Ask</Button>
     </form>
   )
