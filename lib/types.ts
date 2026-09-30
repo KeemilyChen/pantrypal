@@ -68,6 +68,12 @@ export type InventoryItem = {
   updatedAt: string
 }
 
+export const TAG_KINDS = ["cuisine", "diet", "ingredient", "meal", "method", "other"] as const
+export type TagKind = (typeof TAG_KINDS)[number]
+
+export const RECIPE_TAG_SOURCES = ["ai", "user", "ingredient"] as const
+export type RecipeTagSource = (typeof RECIPE_TAG_SOURCES)[number]
+
 export type RecipeIngredient = {
   id: string
   recipeId: string
@@ -75,6 +81,14 @@ export type RecipeIngredient = {
   quantity: number | null
   unit: string | null
   optional: boolean
+}
+
+export type RecipeTag = {
+  id: string
+  slug: string
+  name: string
+  kind: TagKind
+  source?: RecipeTagSource
 }
 
 export type Recipe = {
@@ -86,9 +100,12 @@ export type Recipe = {
   prepTime: number
   cookTime: number
   servings: number
-  source: "system" | "user"
+  source: "system" | "user" | "ai"
   imageUrl: string | null
   createdAt: string
+  isPublic?: boolean
+  publishedAt?: string | null
+  tags?: RecipeTag[]
   ingredients: RecipeIngredient[]
 }
 
@@ -99,6 +116,7 @@ export type MealPlan = {
   mealType: MealType
   recipeId: string
   status: MealPlanStatus
+  recipeName?: string
 }
 
 export type ShoppingItem = {

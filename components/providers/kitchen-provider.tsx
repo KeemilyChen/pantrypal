@@ -35,8 +35,15 @@ type KitchenContextValue = KitchenState & {
   removeInventoryItem: (id: string) => void
   addRecipe: (input: RecipeWrite) => Recipe
   removeRecipe: (id: string) => boolean
-  addMealPlan: (date: string, mealType: MealType, recipeId: string) => void
+  addMealPlan: (
+    date: string,
+    mealType: MealType,
+    recipeId: string,
+    onConflict?: "skip" | "replace",
+  ) => Promise<{ conflict: boolean }>
   removeMealPlan: (id: string) => void
+  usesCloudPlan: boolean
+  refreshCloudPlan: () => Promise<void>
   addShoppingItem: (input: {
     name: string
     quantity?: number | null
@@ -60,6 +67,9 @@ function persist(state: KitchenState) {
 export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<KitchenState>(createSeedState)
   const [ready, setReady] = useState(false)
+  const [usesCloudPlan, setUsesCloudPlan] = useState(false)
+  const [cloudPlans, setCloudPlans] = useState<KitchenState["mealPlans"]>([])
+  const [cloudRecipes, setCloudRecipes] = useState<Recipe[]>([])
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -159,36 +169,119 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     [commit, state.recipes],
   )
 
+  const refreshCloudPlan = useCallback(async () => {
+    const response = await fetch("/api/plan")
+    const data = (await response.json()) as {
+      needsAuth?: boolean
+      slots?: Array<{
+        id: string
+        date: string
+        mealType: MealType
+        recipeId: string
+        status: KitchenState["mealPlans"][number]["status"]
+        recipeName?: string
+        recipeDescription?: string
+      }>
+    }
+    if (!response.ok || data.needsAuth) {
+      setUsesCloudPlan(false)
+      setCloudPlans([])
+      setCloudRecipes([])
+      return
+    }
+    setUsesCloudPlan(true)
+    setCloudPlans(
+      (data.slots ?? []).map((slot) => ({
+        id: slot.id,
+        userId: DEMO_USER_ID_VALUE,
+        date: slot.date,
+        mealType: slot.mealType,
+        recipeId: slot.recipeId,
+        status: slot.status ?? "planned",
+        recipeName: slot.recipeName,
+      })),
+    )
+    setCloudRecipes(
+      (data.slots ?? []).map((slot) => ({
+        id: slot.recipeId,
+        userId: null,
+        name: slot.recipeName || "Recipe",
+        description: slot.recipeDescription || "",
+        instructions: [],
+        prepTime: 0,
+        cookTime: 0,
+        servings: 2,
+        source: "user",
+        imageUrl: null,
+        createdAt: "",
+        ingredients: [],
+      })),
+    )
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    void refreshCloudPlan()
+  }, [ready, refreshCloudPlan])
+
   const addMealPlan = useCallback(
-    (date: string, mealType: MealType, recipeId: string) => {
-      commit((prev) => ({
-        ...prev,
-        mealPlans: [
-          ...prev.mealPlans.filter(
-            (plan) => !(plan.date === date && plan.mealType === mealType),
-          ),
-          {
-            id: crypto.randomUUID(),
-            userId: DEMO_USER_ID_VALUE,
-            date,
-            mealType,
-            recipeId,
-            status: "planned",
-          },
-        ],
-      }))
+    async (
+      date: string,
+      mealType: MealType,
+      recipeId: string,
+      onConflict: "skip" | "replace" = "replace",
+    ) => {
+      if (usesCloudPlan) {
+        const response = await fetch("/api/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, mealType, recipeId, onConflict }),
+        })
+        const data = (await response.json()) as { error?: string; conflict?: boolean }
+        if (response.status === 409 || data.conflict) return { conflict: true }
+        if (!response.ok) throw new Error(data.error ?? "Could not save meal.")
+        await refreshCloudPlan()
+        return { conflict: false }
+      }
+      let conflict = false
+      commit((prev) => {
+        const occupied = prev.mealPlans.some((plan) => plan.date === date && plan.mealType === mealType)
+        if (occupied && onConflict === "skip") {
+          conflict = true
+          return prev
+        }
+        return {
+          ...prev,
+          mealPlans: [
+            ...prev.mealPlans.filter((plan) => !(plan.date === date && plan.mealType === mealType)),
+            {
+              id: crypto.randomUUID(),
+              userId: DEMO_USER_ID_VALUE,
+              date,
+              mealType,
+              recipeId,
+              status: "planned",
+            },
+          ],
+        }
+      })
+      return { conflict }
     },
-    [commit],
+    [commit, refreshCloudPlan, usesCloudPlan],
   )
 
   const removeMealPlan = useCallback(
     (id: string) => {
+      if (usesCloudPlan) {
+        void fetch(`/api/plan?id=${id}`, { method: "DELETE" }).then(() => refreshCloudPlan())
+        return
+      }
       commit((prev) => ({
         ...prev,
         mealPlans: prev.mealPlans.filter((plan) => plan.id !== id),
       }))
     },
-    [commit],
+    [commit, refreshCloudPlan, usesCloudPlan],
   )
 
   const addShoppingItem = useCallback(
@@ -249,10 +342,15 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     [commit],
   )
 
-  const allRecipes = useMemo(
-    () => [...state.recipes, ...SYSTEM_RECIPES],
-    [state.recipes],
-  )
+  const allRecipes = useMemo(() => {
+    const merged = [...state.recipes, ...SYSTEM_RECIPES, ...cloudRecipes]
+    const seen = new Set<string>()
+    return merged.filter((recipe) => {
+      if (seen.has(recipe.id)) return false
+      seen.add(recipe.id)
+      return true
+    })
+  }, [cloudRecipes, state.recipes])
 
   const addMissingToShopping = useCallback(
     (recipe: Recipe) => {
@@ -260,19 +358,37 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         .filter((ingredient) => !ingredient.optional)
         .map((ingredient) => ingredient.ingredientName)
       const { missing } = matchRecipeIngredients(state.inventory, names)
-      missing.forEach((name) => {
-        const ingredient = recipe.ingredients.find((item) => item.ingredientName === name)
-        addShoppingItem({
-          name,
-          quantity: ingredient?.quantity ?? null,
-          unit: ingredient?.unit ?? null,
-          category: "other",
-          source: "meal_plan",
-        })
+      let added = 0
+      commit((prev) => {
+        let shoppingList = prev.shoppingList
+        for (const name of missing) {
+          const exists = shoppingList.some(
+            (item) => !item.checked && item.name.toLowerCase() === name.toLowerCase(),
+          )
+          if (exists) continue
+          const ingredient = recipe.ingredients.find((item) => item.ingredientName === name)
+          added += 1
+          shoppingList = [
+            {
+              id: crypto.randomUUID(),
+              userId: DEMO_USER_ID_VALUE,
+              name,
+              quantity: ingredient?.quantity ?? null,
+              unit: ingredient?.unit ?? null,
+              category: "other",
+              checked: false,
+              source: "meal_plan",
+              createdAt: new Date().toISOString(),
+            },
+            ...shoppingList,
+          ]
+        }
+        if (!added) return prev
+        return { ...prev, shoppingList }
       })
-      return missing.length
+      return added
     },
-    [addShoppingItem, state.inventory],
+    [commit, state.inventory],
   )
 
   const consumeRecipe = useCallback(
@@ -294,8 +410,11 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<KitchenContextValue>(
     () => ({
       ...state,
+      mealPlans: usesCloudPlan ? cloudPlans : state.mealPlans,
       ready,
       allRecipes,
+      usesCloudPlan,
+      refreshCloudPlan,
       addInventoryItem,
       updateInventoryItem,
       removeInventoryItem,
@@ -312,6 +431,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       state,
+      cloudPlans,
+      usesCloudPlan,
+      refreshCloudPlan,
       ready,
       allRecipes,
       addInventoryItem,

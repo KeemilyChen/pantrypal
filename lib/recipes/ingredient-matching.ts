@@ -1,17 +1,61 @@
 import type { InventoryItem } from "@/lib/types"
 
-const ALIASES: Record<string, string[]> = {
-  chicken: ["chicken breast", "chicken thighs", "rotisserie chicken"],
-  rice: ["white rice", "jasmine rice", "brown rice"],
-  onion: ["yellow onion", "white onion", "green onion", "scallion"],
-  "green onion": ["scallion", "spring onion"],
-  garlic: ["garlic cloves", "garlic clove"],
-  broccoli: ["broccoli florets"],
-  egg: ["eggs"],
-  milk: ["whole milk", "2% milk"],
-  soy: ["soy sauce"],
-  oil: ["olive oil", "vegetable oil", "cooking oil"],
-}
+const STOP = new Set(["the", "a", "an", "of", "and", "with", "or", "to"])
+
+const DISTINGUISHERS = new Set([
+  "vinegar",
+  "sauce",
+  "seasoning",
+  "powder",
+  "oil",
+  "milk",
+  "broth",
+  "stock",
+  "juice",
+  "extract",
+  "dressing",
+  "paste",
+  "soup",
+  "noodle",
+  "noodles",
+  "flour",
+  "starch",
+  "marinade",
+  "rub",
+])
+
+const ALLOWED_QUALIFIERS = new Set([
+  "cheddar",
+  "mozzarella",
+  "parmesan",
+  "swiss",
+  "feta",
+  "goat",
+  "shredded",
+  "grated",
+  "sliced",
+  "diced",
+  "minced",
+  "chopped",
+  "ground",
+  "boneless",
+  "skinless",
+  "whole",
+  "baby",
+  "yellow",
+  "white",
+  "brown",
+  "jasmine",
+  "breast",
+  "thigh",
+  "thighs",
+  "ripe",
+  "extra",
+  "virgin",
+  "unsalted",
+  "large",
+  "small",
+])
 
 export function normalizeIngredient(name: string) {
   return name
@@ -22,35 +66,38 @@ export function normalizeIngredient(name: string) {
     .trim()
 }
 
+function singularize(token: string) {
+  if (token.endsWith("ies") && token.length > 4) return `${token.slice(0, -3)}y`
+  if (token.endsWith("oes") && token.length > 4) return token.slice(0, -2)
+  if (token.endsWith("es") && token.length > 4) return token.slice(0, -2)
+  if (token.endsWith("s") && !token.endsWith("ss") && token.length > 3) return token.slice(0, -1)
+  return token
+}
+
 function tokens(name: string) {
-  return normalizeIngredient(name).split(" ").filter(Boolean)
+  return normalizeIngredient(name)
+    .split(" ")
+    .filter(Boolean)
+    .map(singularize)
+    .filter((token) => token.length > 1 && !STOP.has(token))
 }
 
 export function ingredientsMatch(inventoryName: string, recipeName: string) {
-  const left = normalizeIngredient(inventoryName)
-  const right = normalizeIngredient(recipeName)
-  if (!left || !right) return false
-  if (left === right) return true
-  if (left.includes(right) || right.includes(left)) return true
+  const left = tokens(inventoryName)
+  const right = tokens(recipeName)
+  if (!left.length || !right.length) return false
+  if (left.join(" ") === right.join(" ")) return true
+  if (!right.every((token) => left.includes(token))) return false
 
-  for (const [canonical, aliases] of Object.entries(ALIASES)) {
-    const family = [canonical, ...aliases].map(normalizeIngredient)
-    if (family.some((alias) => left.includes(alias) || alias.includes(left)) &&
-      family.some((alias) => right.includes(alias) || alias.includes(right))) {
-      return true
-    }
-  }
-
-  const leftTokens = tokens(inventoryName)
-  const rightTokens = tokens(recipeName)
-  const overlap = leftTokens.filter((token) => rightTokens.includes(token))
-  return overlap.length > 0 && overlap.some((token) => token.length > 3)
+  const leftover = left.filter((token) => !right.includes(token))
+  if (leftover.some((token) => DISTINGUISHERS.has(token))) return false
+  return leftover.every((token) => ALLOWED_QUALIFIERS.has(token))
 }
 
 export function findInventoryMatch(inventory: InventoryItem[], ingredientName: string) {
   return inventory.find(
     (item) =>
-      item.status === "available" &&
+      (item.status ?? "available") === "available" &&
       item.quantity > 0 &&
       ingredientsMatch(item.name, ingredientName),
   )

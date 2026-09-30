@@ -3,7 +3,7 @@
 import { use, useState } from "react"
 import { notFound, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -13,9 +13,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { IngredientList } from "@/components/recipes/recipe-card"
-import { todayISO, useKitchen } from "@/components/providers/kitchen-provider"
+import { AddToPlanForm } from "@/components/recipes/add-to-plan-form"
+import { useKitchen } from "@/components/providers/kitchen-provider"
 import { matchRecipeIngredients } from "@/lib/recipes/ingredient-matching"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 export default function RecipeDetailPage({
   params,
@@ -28,12 +30,9 @@ export default function RecipeDetailPage({
     inventory,
     allRecipes,
     addMissingToShopping,
-    addMealPlan,
-    consumeRecipe,
     removeRecipe,
     ready,
   } = useKitchen()
-  const [step, setStep] = useState(0)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const recipe = allRecipes.find((item) => item.id === id)
 
@@ -62,55 +61,25 @@ export default function RecipeDetailPage({
       </header>
       <IngredientList available={available} missing={missing} />
       <div className="flex flex-wrap gap-2">
-        <Button
-          className="rounded-full"
-          onClick={() => {
-            const count = addMissingToShopping(recipe)
-            toast.success(count ? `Added ${count} missing items` : "You already have everything")
-          }}
-        >
-          Add missing ingredients to shopping list
-        </Button>
-        <Button
-          variant="outline"
-          className="rounded-full"
-          onClick={() => {
-            addMealPlan(todayISO(), "dinner", recipe.id)
-            toast.success("Planned for tonight")
-          }}
-        >
-          Plan for tonight
-        </Button>
-      </div>
-      <section className="rounded-3xl border border-[#f0e6d6] bg-white p-5 shadow-sm">
-        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Step {step + 1} of {recipe.instructions.length}
-        </p>
-        <p className="mt-3 text-lg">{recipe.instructions[step]}</p>
-        <div className="mt-4 flex gap-2">
-          <Button variant="outline" disabled={step === 0} onClick={() => setStep((value) => value - 1)}>
-            Back
-          </Button>
+        <Link href={`/cook/${recipe.id}`} className={cn(buttonVariants(), "rounded-full")}>
+          Start Cooking
+        </Link>
+        {missing.length ? (
           <Button
-            disabled={step >= recipe.instructions.length - 1}
-            onClick={() => setStep((value) => value + 1)}
-          >
-            Next step
-          </Button>
-        </div>
-        {step === recipe.instructions.length - 1 ? (
-          <Button
-            className="mt-4"
-            variant="secondary"
+            variant="outline"
+            className="rounded-full"
             onClick={() => {
-              consumeRecipe(recipe)
-              toast.success("Ingredients marked as used")
+              const count = addMissingToShopping(recipe)
+              toast.success(
+                count ? `${count} ${count === 1 ? "item" : "items"} added to Shopping` : "Those items are already on Shopping",
+              )
             }}
           >
-            I cooked this — update inventory
+            Add missing to Shopping List
           </Button>
         ) : null}
-      </section>
+      </div>
+      <AddToPlanForm recipeId={recipe.id} />
       {recipe.source === "user" ? (
         <>
           <Button

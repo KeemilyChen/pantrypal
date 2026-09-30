@@ -1,11 +1,10 @@
 "use client"
 
+import Link from "next/link"
 import { Bell, Settings } from "lucide-react"
 import { AiCookingCard } from "@/components/dashboard/ai-cooking-card"
-import { ExpiringItems } from "@/components/dashboard/expiring-items"
 import { MealCard } from "@/components/dashboard/meal-card"
 import { PickForMeCard } from "@/components/dashboard/pick-for-me-card"
-import { QuickActions } from "@/components/dashboard/quick-actions"
 import { todayISO, useKitchen } from "@/components/providers/kitchen-provider"
 import { greetingForHour } from "@/lib/food"
 import { sortByExpiration } from "@/lib/inventory/expiration"
@@ -16,9 +15,9 @@ export default function HomePage() {
   if (!ready) return <p className="text-sm text-muted-foreground">Loading your kitchen…</p>
 
   const greeting = greetingForHour()
-  const expiring = sortByExpiration(
+  const expiringCount = sortByExpiration(
     inventory.filter((item) => item.status === "available"),
-  ).slice(0, 6)
+  ).length
   const tonight = mealPlans.find((plan) => plan.date === todayISO() && plan.mealType === "dinner")
   const recipe = allRecipes.find((item) => item.id === tonight?.recipeId)
   const required = recipe?.ingredients.filter((ingredient) => !ingredient.optional) ?? []
@@ -35,7 +34,7 @@ export default function HomePage() {
         <div>
           <p className="text-sm text-muted-foreground">{greeting} 👋</p>
           <h1 className="font-heading text-3xl font-semibold tracking-tight">
-            {profile.name}, what are we cooking today?
+            {profile.name}, what should we eat?
           </h1>
         </div>
         <div className="flex gap-2 text-muted-foreground">
@@ -46,16 +45,9 @@ export default function HomePage() {
       <div id="cook">
         <AiCookingCard />
       </div>
-      <PickForMeCard />
-      <section>
-        <h2 className="mb-3 text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-          Expiring soon
-        </h2>
-        <ExpiringItems items={expiring} />
-        <p className="mt-2 text-xs text-muted-foreground">
-          Dates come from what you entered. They are reminders, not food-safety guarantees.
-        </p>
-      </section>
+      <div id="pick">
+        <PickForMeCard />
+      </div>
       {recipe && match ? (
         <MealCard
           recipe={recipe}
@@ -64,10 +56,34 @@ export default function HomePage() {
         />
       ) : (
         <p className="rounded-3xl border border-dashed border-[#f0e6d6] p-5 text-sm text-muted-foreground">
-          No dinner planned yet. Open Plan and pick a recipe for tonight.
+          No dinner planned yet.{" "}
+          <Link href="/plan" className="text-primary font-medium">
+            Open Kitchen → Plan
+          </Link>{" "}
+          and pick a recipe for tonight.
         </p>
       )}
-      <QuickActions />
+      <p className="text-sm text-muted-foreground">
+        {expiringCount ? (
+          <>
+            {expiringCount} item{expiringCount === 1 ? "" : "s"} with dates in the fridge.{" "}
+            <Link href="/fridge" className="text-primary font-medium">
+              See Kitchen
+            </Link>
+          </>
+        ) : (
+          <>
+            Fridge looks calm.{" "}
+            <Link href="/fridge" className="text-primary font-medium">
+              Open Kitchen
+            </Link>
+          </>
+        )}
+        {" · "}
+        <Link href="/recipes" className="text-primary font-medium">
+          My recipes
+        </Link>
+      </p>
     </div>
   )
 }

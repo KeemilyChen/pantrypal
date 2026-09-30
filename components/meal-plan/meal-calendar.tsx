@@ -23,7 +23,7 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 export function MealCalendar({ month }: { month: string }) {
   const router = useRouter()
-  const { mealPlans, allRecipes } = useKitchen()
+  const { mealPlans } = useKitchen()
   const monthDate = parseISO(`${month}-01`)
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 })
   const gridEnd = endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 })
@@ -32,10 +32,9 @@ export function MealCalendar({ month }: { month: string }) {
   const nextMonth = format(addMonths(monthDate, 1), "yyyy-MM")
 
   function mealCount(date: string) {
-    return MEAL_TYPES.filter((mealType) => {
-      const plan = mealPlans.find((entry) => entry.date === date && entry.mealType === mealType)
-      return Boolean(plan && allRecipes.some((recipe) => recipe.id === plan.recipeId))
-    }).length
+    return MEAL_TYPES.filter((mealType) =>
+      mealPlans.some((entry) => entry.date === date && entry.mealType === mealType),
+    ).length
   }
 
   return (
@@ -46,7 +45,7 @@ export function MealCalendar({ month }: { month: string }) {
           variant="outline"
           className="h-11 rounded-full px-3"
           aria-label="Previous month"
-          onClick={() => router.push(`/plan?month=${previousMonth}`)}
+          onClick={() => router.push(`/plan?view=calendar&month=${previousMonth}`)}
         >
           ←
         </Button>
@@ -56,7 +55,7 @@ export function MealCalendar({ month }: { month: string }) {
           variant="outline"
           className="h-11 rounded-full px-3"
           aria-label="Next month"
-          onClick={() => router.push(`/plan?month=${nextMonth}`)}
+          onClick={() => router.push(`/plan?view=calendar&month=${nextMonth}`)}
         >
           →
         </Button>

@@ -1,4 +1,4 @@
-import { getOpenAI } from "@/lib/ai/openai"
+import { getOpenAI, jsonChatCompletion } from "@/lib/ai/openai"
 import {
   assertReceiptImageSize,
   receiptParseRequestSchema,
@@ -46,23 +46,19 @@ export async function POST(request: Request) {
     )
   }
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Read this receipt and return the JSON object described in the system prompt.",
-          },
-          { type: "image_url", image_url: { url: parsed.data.image } },
-        ],
-      },
-    ],
-  })
+  const completion = await jsonChatCompletion(openai, [
+    { role: "system", content: SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "Read this receipt and return the JSON object described in the system prompt.",
+        },
+        { type: "image_url", image_url: { url: parsed.data.image } },
+      ],
+    },
+  ])
 
   const content = completion.choices[0]?.message.content
   if (!content) {

@@ -9,6 +9,7 @@ import { FridgeView, InventoryGrid } from "@/components/inventory/fridge-view"
 import { InventoryDetailSheet } from "@/components/inventory/inventory-card"
 import { InventoryItemDialog } from "@/components/inventory/inventory-item-dialog"
 import { ReceiptScanDialog } from "@/components/receipts/receipt-scan-dialog"
+import { KitchenSubnav } from "@/components/layout/kitchen-subnav"
 import { useKitchen } from "@/components/providers/kitchen-provider"
 import type { InventoryItem, StorageLocation } from "@/lib/types"
 import { toast } from "sonner"
@@ -25,10 +26,18 @@ function FridgeBody() {
 
   const available = inventory.filter((item) => item.status === "available")
 
-  if (!ready) return <p className="text-sm text-muted-foreground">Loading fridge…</p>
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <KitchenSubnav />
+        <p className="text-sm text-muted-foreground">Loading fridge…</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      <KitchenSubnav />
       <header className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-3xl font-semibold">Fridge</h1>

@@ -1,35 +1,37 @@
-import { getOpenAI } from "@/lib/ai/openai"
-import {
-  parseCookingIntent,
-  recommendFromCatalog,
-  whyForRecipe,
-} from "@/lib/ai/recipe-recommender"
+import { getOpenAI, jsonChatCompletion } from "@/lib/ai/openai"
+import { generateSimpleFromInventory, ownershipWhy } from "@/lib/ai/recipe-recommender"
 import {
   recommendationRequestSchema,
   recommendationResponseSchema,
 } from "@/lib/ai/schemas"
 import { daysUntilExpiration } from "@/lib/inventory/expiration"
 import { matchRecipeIngredients } from "@/lib/recipes/ingredient-matching"
-import { SYSTEM_RECIPES } from "@/lib/data/system-recipes"
-import type { InventoryItem, Recipe } from "@/lib/types"
+import { dedupeTags } from "@/lib/tags/slug"
+import type { InventoryItem } from "@/lib/types"
 
-const SYSTEM_PROMPT = `You are PantryPal, a friendly kitchen buddy.
-The user's message is the PRIMARY instruction. Follow it first.
-Inventory, expiration labels, and the recipe catalog are supporting context only.
+export const maxDuration = 60
+
+const SYSTEM_PROMPT = `You are PantryPal. Suggest 1 to 3 practical home-cooked recipes.
+
+The user's request and their AVAILABLE INVENTORY are the source of truth.
+Invent recipes around those foods. Do NOT choose from a fixed recipe catalog.
 
 Rules:
-- Recommend 1 to 3 meals ONLY from recipeCatalog. Never invent a recipe that is not in the catalog.
-- Set matchedRecipeId to that catalog recipe's id. Never invent ids.
-- Honor constraints: time limits, exclusions (no rice, no pasta), effort (easy), preferences (light, high protein), "use my X", and using food that is expiring soon when the user asks or it clearly helps.
-- Do not recommend a recipe that uses an excluded ingredient.
-- Do not invent inventory items. using/missing must come from the catalog ingredients vs inventory.
-- Treat expiration dates as user-entered reminders, not food-safety guarantees.
-- summary should sound like a buddy answering the request in 1-2 sentences.
-- reason should say why this meal fits the request.
-- why should be 2-5 short bullets (time, exclusions, expiring item, already have ingredients, matches "easy"/"light"/etc).
-- If nothing in the catalog fits well, still pick the closest catalog recipes and say what does not perfectly match.
+- Prefer using several inventory items in each recipe.
+- You MAY add a small number of extra ingredients when useful (for example salt, oil, a spice, or one produce item).
+- List EVERY required ingredient in ingredients[], including extras. Do not hide extras in the instructions only.
+- Never claim the user already owns an ingredient. Do not include using, missing, or "you have X" language.
+- Honor time limits and preferences in the request (quick, spicy, no oven, etc.).
+- estimatedMinutes, prepTime, and cookTime must be realistic integers.
+- instructions: 4 to 8 short steps.
+- If inventory is empty, still return simple recipes and list all ingredients as extras.
+- Invent 3 to 8 open-ended tags covering cuisine, main ingredients, meal type, health/style, cooking method, and time/convenience. Do not choose from a fixed tag list.
+- Also estimate nutrition for the full recipe (not per bite): calories, proteinG, carbsG, fatG as numbers from the listed ingredient amounts. These are rough kitchen estimates, not lab values.
 
-Return JSON: {summary, source:"ai", recipes:[{name,reason,estimatedMinutes,using,missing,matchedRecipeId,why}]}`
+Return JSON only:
+{summary, recipes:[{name, description, estimatedMinutes, prepTime, cookTime, ingredients:[{name, quantity, unit, optional}], instructions, tags:[{name, kind}], calories, proteinG, carbsG, fatG}]}
+quantity may be a number or null. unit may be a string or null. optional is boolean.
+kind is one of cuisine, diet, ingredient, meal, method, other.`
 
 export async function POST(request: Request) {
   const json: unknown = await request.json()
@@ -54,39 +56,9 @@ export async function POST(request: Request) {
     updatedAt: new Date().toISOString(),
   }))
 
-  const catalog: Recipe[] = parsed.data.recipeCatalog.map((recipe) => {
-    const system = SYSTEM_RECIPES.find((item) => item.id === recipe.id)
-    if (system) return system
-    return {
-      id: recipe.id,
-      userId: "request",
-      name: recipe.name,
-      description: recipe.description ?? "",
-      instructions: [],
-      prepTime: recipe.prepTime,
-      cookTime: recipe.cookTime,
-      servings: 2,
-      source: "user",
-      imageUrl: null,
-      createdAt: new Date().toISOString(),
-      ingredients: recipe.ingredients.map((name, index) => ({
-        id: `${recipe.id}-${index}`,
-        recipeId: recipe.id,
-        ingredientName: name,
-        quantity: null,
-        unit: null,
-        optional: false,
-      })),
-    }
-  })
-  const recipes = catalog.length ? catalog : SYSTEM_RECIPES
-  const intent = parseCookingIntent(parsed.data.query, parsed.data.minutes)
-
   const openai = getOpenAI()
   if (!openai) {
-    return Response.json(
-      recommendationResponseSchema.parse(recommendFromCatalog(parsed.data.query, inventory, recipes, parsed.data.minutes)),
-    )
+    return Response.json(recommendationResponseSchema.parse(generateSimpleFromInventory(parsed.data.query, inventory)))
   }
 
   const inventoryContext = parsed.data.inventory.map((item) => ({
@@ -98,31 +70,18 @@ export async function POST(request: Request) {
     daysUntilExpiration: daysUntilExpiration(item.expirationDate),
   }))
 
-  const catalogContext = recipes.map((recipe) => ({
-    id: recipe.id,
-    name: recipe.name,
-    description: recipe.description,
-    minutes: recipe.prepTime + recipe.cookTime,
-    ingredients: recipe.ingredients.map((ingredient) => ingredient.ingredientName),
-  }))
-
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: JSON.stringify({
-            request: parsed.data.query,
-            parsedIntent: intent,
-            inventory: inventoryContext,
-            recipeCatalog: catalogContext,
-          }),
-        },
-      ],
-    })
+    const completion = await jsonChatCompletion(openai, [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: JSON.stringify({
+          request: parsed.data.query,
+          minutes: parsed.data.minutes ?? null,
+          availableInventory: inventoryContext,
+        }),
+      },
+    ])
 
     const content = completion.choices[0]?.message.content
     if (!content) {
@@ -148,15 +107,15 @@ export async function POST(request: Request) {
     })
     if (!validated.success) {
       return Response.json(
-        { error: "PantryPal's answer did not match a catalog recipe. Try a slightly different request." },
+        { error: "PantryPal's answer was incomplete. Try asking again." },
         { status: 502 },
       )
     }
 
-    const attached = attachCatalogRecipes(validated.data, recipes, inventory, intent)
+    const attached = attachOwnership(validated.data, inventory)
     if (!attached.recipes.length) {
       return Response.json(
-        { error: "PantryPal could not match that request to a saved recipe. Try a slightly different request." },
+        { error: "PantryPal could not build a recipe from that request. Try again." },
         { status: 422 },
       )
     }
@@ -170,39 +129,32 @@ export async function POST(request: Request) {
   }
 }
 
-function attachCatalogRecipes(
+function attachOwnership(
   response: ReturnType<typeof recommendationResponseSchema.parse>,
-  recipes: Recipe[],
   inventory: InventoryItem[],
-  intent: ReturnType<typeof parseCookingIntent>,
 ) {
-  const resolved = response.recipes.flatMap((entry) => {
-    const recipe =
-      recipes.find((item) => item.id === entry.matchedRecipeId) ??
-      recipes.find((item) => item.name.toLowerCase() === entry.name.toLowerCase())
-    if (!recipe) return []
-    const names = recipe.ingredients.filter((item) => !item.optional).map((item) => item.ingredientName)
-    const { available, missing } = matchRecipeIngredients(inventory, names)
-    const minutes = recipe.prepTime + recipe.cookTime
-    const why = entry.why.length
-      ? entry.why
-      : whyForRecipe(recipe, inventory, intent, available, missing)
-    return [
-      {
-        ...entry,
-        name: recipe.name,
-        estimatedMinutes: minutes || entry.estimatedMinutes,
-        using: available,
-        missing,
-        matchedRecipeId: recipe.id,
-        why,
-      },
-    ]
+  const recipes = response.recipes.map((entry) => {
+    const required = entry.ingredients
+      .filter((item) => !item.optional)
+      .map((item) => item.name)
+    const { available, missing } = matchRecipeIngredients(inventory, required)
+    const minutes = entry.estimatedMinutes || entry.prepTime + entry.cookTime
+    return {
+      ...entry,
+      description: entry.description || entry.reason || "",
+      reason: entry.description || "A recipe idea based on your fridge and request.",
+      estimatedMinutes: minutes || 1,
+      tags: dedupeTags(entry.tags ?? []),
+      using: available,
+      missing,
+      why: ownershipWhy(available, missing, minutes || 1),
+      matchedRecipeId: null,
+    }
   })
 
   return {
-    ...response,
+    summary: `Here ${recipes.length === 1 ? "is an idea" : `are ${recipes.length} ideas`} based on your fridge and your request.`,
     source: "ai" as const,
-    recipes: resolved.slice(0, 3),
+    recipes: recipes.slice(0, 3),
   }
 }
